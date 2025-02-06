@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Землетрясения за неделю</title>
+
+    <!-- Подключаем Leaflet -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
+
+    <!-- Подключаем Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; }
+        #map { height: 500px; width: 80%; margin: auto; }
+        .stats { margin: 20px auto; padding: 10px; width: 80%; text-align: left; border: 1px solid #ccc; background: #f9f9f9; }
+        .stats h2 { text-align: center; }
+        canvas { width: 80% !important; max-width: 800px; margin: 20px auto; }
+    </style>
+</head>
+<body>
+    <h1>Статистика землетрясений за последнюю неделю</h1>
+
+    <div class="stats">
+        <h2>📊 Статистика</h2>
+        <p><b>Всего землетрясений:</b> <span id="total">Загрузка...</span></p>
+        <p><b>Средняя магнитуда:</b> <span id="average">Загрузка...</span></p>
+        <p><b>Самое сильное землетрясение:</b> <span id="max">Загрузка...</span></p>
+    </div>
+
+    <canvas id="earthquakeChart"></canvas>
+
+    <div id="map"></div>
+
+    <script>
+        // Функция для получения даты 7 дней назад
+        function getPastDate(daysAgo) {
+            let date = new Date();
+            date.setDate(date.getDate() - daysAgo);
+            return date.toISOString().split("T")[0]; // Формат YYYY-MM-DD
+        }
+
+        const START_DATE = getPastDate(7); // 7 дней назад
+        const END_DATE = new Date().toISOString().split("T")[0]; // Сегодня
+
+        // USGS API для получения землетрясений за неделю
+        const USGS_API_URL = `https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&starttime=${START_DATE}&endtime=${END_DATE}`;
+
+        let allEarthquakes = [];
+        let sumMagnitude = 0;
+        let maxMagnitude = 0;
+        let maxPlace = "";
+        let totalEarthquakes = 0;
+        let dailyCounts = {};
+
+        fetch(USGS_API_URL)
+            .then(response => response.json())
+            .then(data => {
+                if (!data.features || data.features.length === 0) {
+                    alert("Нет данных о землетрясениях за эту неделю.");
+                    return;
+                }
+
+                // Создаем карту
+                let map = L.map('map').setView([20, 0], 2);
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '© OpenStreetMap'
+                }).addTo(map);
+
+                data.features.forEach(eq => {
+                    let coords = eq.geometry.coordinates;
+                    let magnitude = eq.properties.mag;
+                    let place = eq.properties.place;
+                    let time = new Date(eq.properties.time);
+                    let day = `${time.getFullYear()}-${String(time.getMonth() + 1).padStart(2, '0')}-${String(time.getDate()).padStart(2, '0')}`;
+
+                    sumMagnitude += magnitude;
+                    if (magnitude > maxMagnitude) {
+                        maxMagnitude = magnitude;
+                        maxPlace = place;
+                    }
+
+                    if (!dailyCounts[day]) dailyCounts[day] = 0;
+                    dailyCounts[day]++;
+                    totalEarthquakes++;
+
+                    let color = magnitude > 5 ? 'red' : magnitude > 3 ? 'orange' : 'blue';
+                    let radius = magnitude * 2;
+
+                    L.circleMarker([coords[1], coords[0]], {
+                        radius: radius,
+                        color: color,
+                        fillColor: color,
+                        fillOpacity: 0.6
+                    }).addTo(map)
+                    .bindPopup(`<b>Место:</b> ${place}<br><b>Магнитуда:</b> ${magnitude}<br><b>Время:</b> ${time.toLocaleString()}`);
+                });
+
+                // Выводим статистику
+                document.getElementById("total").textContent = totalEarthquakes;
+                document.getElementById("average").textContent = (sumMagnitude / totalEarthquakes).toFixed(2);
+                document.getElementById("max").textContent = `${maxMagnitude} (${maxPlace})`;
+
+                // Рисуем график
+                const ctx = document.getElementById('earthquakeChart').getContext('2d');
+                new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: Object.keys(dailyCounts),
+                        datasets: [{
+                            label: 'Землетрясения по дням',
+                            data: Object.values(dailyCounts),
+                            backgroundColor: 'rgba(54, 162, 235, 0.5)',
+                            borderColor: 'rgba(54, 162, 235, 1)',
+                            borderWidth: 2,
+                            fill: true
+                        }]
+                    },
+                    options: {
+                        scales: { y: { beginAtZero: true } }
+                    }
+                });
+            })
+            .catch(error => {
+                console.error("Ошибка загрузки данных:", error);
+                alert("Ошибка загрузки данных о землетрясениях.");
+            });
+    </script>
+</body>
+</html>
